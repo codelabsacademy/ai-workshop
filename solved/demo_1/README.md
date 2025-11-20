@@ -155,7 +155,55 @@ git branch -M main
 git push -u origin main
 ```
 
-## Further Steps: After successfully running the demo lets extend it further
+## After successfully running the demo lets organize it
+Once you have your implementation running check the solved directory and restructure your code as per the solution.
 
-### 1. Once you have your implementation running check the solved directory and restructure your code as per the solution.
 
+## Adding Structured Response Capabilities
+
+### The Company
+GreenVault is an asset management firm that invests only in companies meeting strict Environmental, Social, and Governance (ESG) criteria.
+
+### The Problem
+GreenVault analysts spend hours manually reviewing lengthy corporate sustainability reports, news articles, and compliance filings to answer two critical, recurring questions:
+
+**Compliance Check:** Does a potential investment (a corporate sustainability report) contain the required data points (e.g., carbon emission figures, executive compensation) in a structured, comparable format?
+
+Instead of an analyst manually reading a 100-page report and filling out a form, the FastAPI Microservice will take the document's summary text and automatically generate a structured JSON profile.
+
+### Tasks:
+#### 1. Create a pydantic schema named "InvestmentProfile" with the following fields and data type:
+        carbon_intensity: float
+        board_diversity_score: float
+        key_risks: List[str]
+        compliance_status: str
+
+#### 2. Define the Parser and get formatting instructions
+```python
+    parser = JsonOutputParser(pydantic_object=InvestmentProfile)
+    format_instructions = parser.get_format_instructions()
+```
+
+#### 3. Use the "PrompTemplate" function to creata a template:
+```python
+prompt = PromptTemplate(
+        template="Analyze the following company sustainability data and extract the required profile fields. STRICTLY follow the format instructions.\n{format_instructions}\n\nCompany Data:\n{data}",
+        input_variables=["data"],
+        partial_variables={"format_instructions": format_instructions}
+    )
+```
+
+#### 4. Create chain
+```python
+# LangChain Expression Language (LCEL) chain
+analysis_chain = prompt | llm | parser
+```
+
+#### 5. Place it all the above snippets at appropriate places as per the flow of the data
+
+#### 6. Try the following prompt to test
+```json
+{
+  "prompt": "Q3 Environmental Summary: Our company emitted 1,250,000 tons of CO2 equivalent (CO2e) this quarter, while revenue was $1.5 billion. This yields a carbon intensity ratio of 0.833 tons per $1,000 of revenue. Furthermore, we face growing uncertainty around new regional PFAS regulations which may impact our manufacturing costs significantly. Social Governance: Currently, three of our nine board members are women, and one is from an underrepresented ethnic group, giving us a diversity ratio of 4 out of 9, or approximately 0.44. Based on these initial figures, and the looming regulatory risk, we must exercise caution."
+}
+```

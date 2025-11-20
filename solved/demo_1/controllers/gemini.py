@@ -20,3 +20,4 @@ class Gemini:
         except Exception as e:
             # Return a simple error message if the API key is invalid or another issue occurs
             return {"error": str(e)}
+        
