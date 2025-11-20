@@ -67,7 +67,7 @@ app = FastAPI(title="Gemini Microservice")
 # 2. Initialize the Gemini Model using LangChain
 # It automatically reads the GOOGLE_API_KEY from your environment
 llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash",
+    model="gemini-2.5-flash",
     temperature=0.7 # Add a little creativity
 )
 
@@ -153,4 +153,9 @@ git commit -m "Initial commit: FastAPI microservice with LangChain and Gemini"
 git remote add origin [https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git)
 git branch -M main
 git push -u origin main
-````
+```
+
+## Further Steps: After successfully running the demo lets extend it further
+
+### 1. Once you have your implementation running check the solved directory and restructure your code as per the solution.
+
