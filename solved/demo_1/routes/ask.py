@@ -16,3 +16,9 @@ def ask_ai(request: AskGeminiRequest):
 
     return data
 
+@router.post("/extract-profile")
+async def extract_policy(request: AskGeminiRequest):
+    
+    data = await Gemini(temperature=0).extract_profile(request.prompt)
+
+    return data
