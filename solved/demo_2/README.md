@@ -36,53 +36,80 @@ A new `requirement.txt` file has been provided within this directory for ease.
 
 ```python
 import os
-from langchain_google_genai import ChatGoogleGenerativeAI 
-from langchain.agents import create_react_agent, AgentExecutor
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.tools import DuckDuckGoSearchRun
-from langchain import hub 
+from langchain.agents import create_agent
 
+# -------------------------------
 # 1. Security Check
+# -------------------------------
 if "GOOGLE_API_KEY" not in os.environ:
     print("Error: GOOGLE_API_KEY not set. Please set it and retry.")
     exit()
 
-# 2. Set up the LLM ("The Brain")
-# Use Gemini 1.5 Flash with temperature=0 for consistent planning.
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+# -------------------------------
+# 2. LLM
+# -------------------------------
+model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0, max_retries=1)
 
-# 3. Set up the Tools ("The Hands")
-tools = [
-    DuckDuckGoSearchRun()
-]
+# -------------------------------
+# 3. Tools
+# -------------------------------
+tools = [DuckDuckGoSearchRun()]
 
-# 4. Get the Agent Instructions (The Prompt)
-# We pull the standard "ReAct" prompt from the LangChain Hub.
-prompt = hub.pull("hwchase17/react")
+# -------------------------------
+# 4. System Instructions
+# -------------------------------
+system_prompt = (
+    "You are a helpful AI assistant. Use tools when necessary. "
+    "You are a ReAct agent."
+    "You have the tool for Duck Duck Go searching"
+)
 
-# 5. Create the Agent
-agent = create_react_agent(llm, tools, prompt)
+# -------------------------------
+# 5. Create ReAct Agent (FIXED ARGUMENT)
+# -------------------------------
+# Use 'system_message' instead of 'state_modifier' for your LangGraph version.
+agent = create_agent(model=model, 
+                     tools=tools,
+                     system_prompt=system_prompt,
+                     debug=True)
 
-# 6. Create the Runtime Executor
-# verbose=True is CRITICAL to see the Thought -> Action -> Observation loop.
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+# -------------------------------
+# 6. Agent runtime
+# -------------------------------
+app = agent
 
-print("🤖 Agent is ready! Ask a question about current events.")
-print("Type 'exit' to quit.")
+print("🤖 Agent ready! Ask a question.")
+print("Type 'exit' to quit.\n")
 
-# 7. Interactive Loop
+# -------------------------------
+# 7. CLI loop
+# -------------------------------
 while True:
-    user_input = input("\nYou: ")
-    if user_input.lower() in ['exit', 'quit']:
+    try:
+        user_input = input("You: ").strip()
+    except EOFError:
+        print("\nExiting agent.")
+        break
+
+    if not user_input:
+        print("⚠️ Input cannot be empty. Try again.")
+        continue
+    if user_input.lower() in ["exit", "quit"]:
         break
 
     print("\n--- Agent Thinking ---\n")
-    
-    # The invoke command triggers the ReAct loop
-    response = agent_executor.invoke({
-        "input": user_input
-    })
 
-    print(f"\nFinal Answer: {response['output']}\n")
+    # Invoke Agent 
+    result = app.invoke({"messages": [("human", user_input)]})
+
+    # print(result)
+
+    # Extract Output
+    last_message = result["messages"][-1].content[0]["text"]
+    
+    print(f"\nFinal Answer: {last_message}\n")
 ```
 
 ## ▶️ Running & Testing the Agent
@@ -103,3 +130,19 @@ Ask questions that require external information (e.g., current news, sports scor
 3. **Observation:** The tool returns raw search results.
 
 4. **Thought:** The agent synthesizes the answer from the observation.
+
+
+🌟 Advanced Hands-On: Multi-Tool Autonomous Audit Agent
+Use Case: GreenVault Compliance Audit
+The Agent's Goal is to perform a full compliance audit:
+
+Look up internal policy (RAG Tool).
+
+Find external financial data (Web Search Tool).
+
+Calculate a composite score (Calculator Tool).
+
+Provide a structured, final recommendation.
+
+1. New Dependencies & RAG Setup
+Since this combines previous extensions, ensure you have all the following libraries installed and your policy.txt file is in the root directory.
