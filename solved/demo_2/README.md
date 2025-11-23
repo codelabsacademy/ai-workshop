@@ -132,202 +132,142 @@ Ask questions that require external information (e.g., current news, sports scor
 4. **Thought:** The agent synthesizes the answer from the observation.
 
 
-## 🌟 Advanced Hands-On: Multi-Tool Autonomous Audit Agent
-### Use Case: GreenVault Compliance Audit
+# 🤖 Session 2 Extension: Advanced Agent Engineering (Self-Contained ReAct)
 
-1. The Agent's **Goal** is to perform a full compliance audit:
+This module moves beyond pre-built components to build a high-control, multi-tool agent using **LangChain's `create_agent`** and a **custom system prompt**. This method is preferred in production for its reliability and explicit control over the agent's behavior.
 
-2. Look up **internal policy** (RAG Tool).
+## 🎯 Learning Goals
 
-3. Find external **financial data** (Web Search Tool).
+* Define **multiple custom tools** (`@tool`) for specialized tasks (Web Search, Safe Calculation).
+* Implement a **secure calculator** using Python's `ast.literal_eval`.
+* Replace external prompt retrieval with a **local system prompt** to fully control the agent's reasoning pattern (Thought $\rightarrow$ Action $\rightarrow$ Observation).
+* Practice invoking the agent and manually parsing its final structured output.
 
-4. **Calculate** a composite score (Calculator Tool).
+---
 
-5. Provide a structured, final recommendation.
+## 🛠️ Prerequisites & Setup
 
-### 1. New Dependencies & RAG Setup
-Since this combines previous extensions, ensure you have all the following libraries installed and your policy.txt file is in the root directory.
+This module continues the work started in Session 1.
 
-```bash
-# Install everything needed for Agents, RAG, Web Search, and Math
-pip install langchain langchain-google-genai langchain-community duckduckgo-search numpy numexpr faiss-cpu
-```
-*No need to install if libraries already exist*
+1.  **Dependencies:** You need the core LangChain agent libraries, the Google connector, and the DuckDuckGo search tool.
+    ```bash
+    # Ensure your virtual environment is active!
+    pip install langchain langchain-community langchain-google-genai duckduckgo-search
+    ```
+    *Ignore if dependencies already exist*
 
-### 2. Pydantic Schema for Final Output
-We will resuse the structured output technique to define the final audit report format.
-```python
-# Defined within the complex_agent_service.py file
-from pydantic import BaseModel, Field
-from typing import List
+2.  **API Key:** Ensure your `GOOGLE_API_KEY` is still set in your environment.
 
-class AuditDecision(BaseModel):
-    """The structured output format for the final compliance decision."""
-    compliance_status: str = Field(description="FINAL compliance decision: 'PASS' or 'FAIL'.")
-    score_metric: float = Field(description="The calculated composite ESG score metric (0.0 to 1.0).")
-    rationale: str = Field(description="The key policy and external data points used to justify the decision.")
-    tools_used: List[str] = Field(description="List of tools the agent explicitly used (e.g., Web_Search, Policy_Lookup, Calculator).")
-```
+---
 
-### 3. Code:
-The following script is for your assistance, the script defines three specialized tools and creates that central agent that orchestrates them.
+## 💻 Code: `agent_cli.py`
+
+This script contains the entire agent setup, including the **LLM, two specialized tools, and the custom ReAct prompt**.
+
+**Action:** Create a file named `agent_cli.py` and paste the following code:
 
 ```python
 import os
-from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import List
+import ast 
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_community.tools import DuckDuckGoSearchRun
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-# LangChain Imports
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_community.document_loaders import TextLoader
-from langchain_text_splitters import CharacterTextSplitter
-from langchain_community.vectorstores import FAISS
-from langchain.chains import RetrievalQA
-from langchain.agents import create_react_agent, AgentExecutor
-from langchain_community.tools import DuckDuckGoSearchRun, tool
-from langchain_community.tools.llm_math.tool import LLMMathTool
-from langchain import hub
-from langchain_core.pydantic_v1 import BaseModel as PydanticBaseModel, Field
-from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.prompts import PromptTemplate
+# -------------------------------
+# 1. LLM & Tools Setup
+# -------------------------------
 
-# --- 1. TOOL DEFINITIONS ---
+# A. Security Check
+if "GOOGLE_API_KEY" not in os.environ:
+    print("Error: GOOGLE_API_KEY not set. Please set it and retry.")
+    exit()
 
-# A. Retrieval Tool (RAG - Internal Data)
-POLICY_FILE = "policy.txt"
-embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+# B. LLM (The Brain)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
-# Initialize RAG retriever (assumes policy.txt exists and is loaded)
-try:
-    loader = TextLoader(POLICY_FILE)
-    docs = CharacterTextSplitter(chunk_size=500, chunk_overlap=0).split_documents(loader.load())
-    vectorstore = FAISS.from_documents(docs, embeddings)
-    rag_retriever = vectorstore.as_retriever()
-except Exception:
-    rag_retriever = None
-
-@tool
-def policy_lookup(query: str) -> str:
-    """
-    Use this tool to lookup internal GreenVault policies from the ESG Policy Handbook. 
-    Always prioritize this tool for compliance and policy questions.
-    """
-    if not rag_retriever: return "Error: Policy system offline."
-    
-    # Create a transient QA Chain for the lookup
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
-    qa_chain = RetrievalQA.from_chain_type(llm, retriever=rag_retriever, chain_type="stuff")
-    
-    result = qa_chain.invoke({"query": query})
-    return result.get("result", "Policy information not found.")
-
-# B. Web Search Tool (External Data)
+# C. Tool 1: External Search (Current Data)
 web_search_tool = DuckDuckGoSearchRun(name="Web_Search_Tool")
 
-# C. Calculation Tool (Analysis)
-# This tool uses a safe expression evaluator (numexpr) for complex math
-math_tool = LLMMathTool(name="Calculator_Tool") 
-
-# --- 2. AGENT ORCHESTRATION ---
-
-# List of all tools available to the agent
-TOOLS = [policy_lookup, web_search_tool, math_tool]
-
-# Initialize LLM for the Agent's reasoning loop
-AGENT_LLM = ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0.2) # Use Pro for better reasoning
-
-# Create the Agent
-agent_prompt = hub.pull("hwchase17/react")
-agent = create_react_agent(AGENT_LLM, TOOLS, agent_prompt)
-agent_executor = AgentExecutor(agent=agent, tools=TOOLS, verbose=True)
-
-# --- 3. FASTAPI API SETUP ---
-
-app = FastAPI(title="Multi-Tool Audit Agent Service")
-
-class AuditRequest(BaseModel):
-    company_data: str = Field(description="The unstructured text containing company's ESG data and metrics.")
-
-class AuditDecision(PydanticBaseModel):
-    compliance_status: str = Field(description="FINAL compliance decision: 'PASS' or 'FAIL'.")
-    score_metric: float = Field(description="The calculated composite ESG score metric (0.0 to 1.0).")
-    rationale: str = Field(description="The key policy and external data points used to justify the decision.")
-    tools_used: List[str] = Field(description="List of tools the agent explicitly used (e.g., Web_Search, Policy_Lookup, Calculator).")
-
-@app.post("/audit-company")
-async def audit_company(request: AuditRequest):
+# D. Tool 2: Internal Calculator (Custom, safe Python function)
+@tool
+def safe_calculator(expression: str) -> str:
     """
-    Invokes the multi-tool agent to perform a complete compliance audit and returns a structured decision.
+    Use this tool to calculate simple arithmetic expressions. 
+    The input must be a valid Python arithmetic expression string (e.g., '2 * 5 + 10').
+    Do not include variables or complex functions.
     """
-    
-    # Define the final structured output chain
-    parser = JsonOutputParser(pydantic_object=AuditDecision)
-    format_instructions = parser.get_format_instructions()
-
-    # The prompt instructs the agent what to do and how to structure its final thought process.
-    agent_task = f"""
-    You are the GreenVault Senior Compliance Analyst. Your task is to audit the following company data.
-    
-    1. Policy Check: Use the 'policy_lookup' tool to find the required board diversity score and executive compensation requirements.
-    2. External Check: Use the 'Web_Search_Tool' to find the company's current stock price or recent financial news.
-    3. Calculate: Use the 'Calculator_Tool' if any arithmetic is needed (e.g., calculating a final score).
-    4. FINAL OUTPUT: Based on ALL gathered information, provide the final structured decision.
-    
-    Audit Data: {request.company_data}
-    
-    After reasoning, output the final structured JSON adhering to the following format instructions:
-    {format_instructions}
-    
-    """
+    # Restrict characters to basic arithmetic and numbers for security
+    safe_chars = '0123456789.+-*/() '
+    if not all(c in safe_chars for c in expression):
+        return "Error: Expression contains unsafe characters."
     
     try:
-        # 1. Run the Multi-Tool Agent
-        agent_result = await agent_executor.ainvoke({"input": agent_task})
-        final_text = agent_result["output"]
-        
-        # 2. Extract structured JSON from the final text output
-        # We assume the agent's final answer contains the structured data due to the prompt instructions.
-        
-        # A simple method to extract and parse the JSON (robustness would require more complex parsing)
-        # For the workshop, we rely on the LLM to adhere to the final instruction.
-        
-        # Since the ReAct loop returns a string, we feed the final result into the parser chain
-        
-        # We'll use a simple final prompt for parsing the structured output
-        final_parsing_prompt = PromptTemplate(
-            template="Given the agent's final audit summary below, extract and format the data exactly according to the JSON schema.\n{format_instructions}\n\nAgent Summary: {summary}",
-            input_variables=["summary"],
-            partial_variables={"format_instructions": format_instructions}
-        )
-        
-        final_parser_chain = final_parsing_prompt | AGENT_LLM | parser
-
-        # Use the final_text from the agent run for parsing
-        final_decision = await final_parser_chain.ainvoke({"summary": final_text})
-        
-        return final_decision
-    
+        # ast.literal_eval is the safe alternative to eval()
+        result = ast.literal_eval(expression)
+        return str(result)
     except Exception as e:
-        return {"error": f"Audit Agent failed: {e}. Check if policy.txt exists and API key is valid."}
-```
+        return f"Calculation Error: {e}"
 
-### 4. Sample Prompt for Testing
-To test the complex multi-tool agent, you would use a detailed prompt that requires all three tools for a full audit:
-```json
-{
-  "company_data": "Company X just released its Q3 report showing a Board Diversity Score of 0.85 and a carbon intensity of 0.25. The CEO's bonus was 15% of annual compensation. Based on this, and today's stock price, assess compliance and calculate the final score using the formula (Board Score + (1 - Carbon Intensity)) / 2."
-}
-```
+TOOLS = [web_search_tool, safe_calculator]
 
-The agent will then:
 
-1. **Look up policy:** Policy lookup (Policy Tool).
+# -------------------------------
+# 2. Agent Prompt (The "Constitution")
+# -------------------------------
 
-2. **Look up stock price:** Web Search Tool.
+# This system prompt explicitly defines the agent's behavior and the ReAct format.
+REACT_SYSTEM_INSTRUCTIONS = """
+You are a general-purpose assistant. You have access to the following tools: {tool_names}.
 
-3. **Evaluate compliance:** Based on policy lookup.
+You must use the ReAct pattern for reasoning and tool use.
 
-4. **Calculate final score:** Calculator Tool.
+Use the following format:
+Thought: your reasoning for the next step.
+Action: the name of the tool to use (e.g., Web_Search_Tool or safe_calculator).
+Action Input: the input to the tool.
+Observation: the result of the tool action.
+... (this Thought/Action/Observation cycle repeats)
 
-5. Return final structured JSON.
+When you have the final answer, use the Final Answer format.
+Final Answer: your ultimate answer to the question.
+"""
+
+# -------------------------------
+# 3. Agent Execution Setup
+# -------------------------------
+
+# Create the Agent Runnable: combines the LLM, the tools, and the custom system prompt.
+agent = create_agent(
+    model=llm, 
+    tools=TOOLS, 
+    system_prompt=REACT_SYSTEM_INSTRUCTIONS
+)
+
+print("🤖 Simple Self-Contained ReAct Agent is ready!")
+print("Type 'exit' to quit.")
+print("---")
+
+
+# -------------------------------
+# 4. Interactive Loop
+# -------------------------------
+while True:
+    user_input = input("\nYou: ")
+    if user_input.lower() in ['exit', 'quit']:
+        break
+
+    print("\n--- Agent Thinking (Verbose Trace) ---\n")
+    
+    try:
+        # Invoke the agent with the user's input
+        response = agent.invoke({"messages": [("human", user_input)]})
+
+        # Extract the final answer content from the response object
+        final_answer = response["messages"][-1].content[0]["text"]
+
+    except Exception as e:
+        final_answer = f"Agent execution failed: {e}"
+
+    print(f"\nFinal Answer: {final_answer}\n")
