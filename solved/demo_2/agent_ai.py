@@ -1,5 +1,6 @@
 import os
 import ast 
+import operator as op
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain.agents import create_agent
@@ -23,21 +24,56 @@ llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 web_search_tool = DuckDuckGoSearchRun(name="Web_Search_Tool")
 
 # Tool 2: Internal Calculator (Custom, stable Python function)
-@tool
+# Allowed math operators
+SAFE_OPERATORS = {
+    ast.Add: op.add,
+    ast.Sub: op.sub,
+    ast.Mult: op.mul,
+    ast.Div: op.truediv,
+    ast.Pow: op.pow,
+    ast.USub: op.neg,
+    ast.UAdd: op.pos,
+    ast.FloorDiv: op.floordiv,
+    ast.Mod: op.mod,
+}
+
+def _eval(node):
+    """Recursively evaluate a safe AST node."""
+    if isinstance(node, ast.Num):  # <number>
+        return node.n
+
+    elif isinstance(node, ast.BinOp):  # <left> <operator> <right>
+        if type(node.op) not in SAFE_OPERATORS:
+            raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
+        return SAFE_OPERATORS[type(node.op)](_eval(node.left), _eval(node.right))
+
+    elif isinstance(node, ast.UnaryOp):  # - <operand>
+        if type(node.op) not in SAFE_OPERATORS:
+            raise ValueError(f"Unsupported unary operator: {type(node.op).__name__}")
+        return SAFE_OPERATORS[type(node.op)](_eval(node.operand))
+
+    else:
+        raise ValueError(f"Unsupported expression type: {type(node).__name__}")
+
+
 def safe_calculator(expression: str) -> str:
     """
-    Use this tool to calculate simple arithmetic expressions. 
-    The input must be a valid Python arithmetic expression string (e.g., '2 * 5 + 10').
-    Do not include variables or complex functions.
+    Safely evaluates arithmetic expressions like:
+    - "15450 - 8125.75"
+    - "120 * 55"
+    - "3.14159 * 17.5 * 17.5"
+
+    Does NOT allow:
+    - variables
+    - function calls
+    - attribute access
     """
-    safe_chars = '0123456789.+-*/() '
-    if not all(c in safe_chars for c in expression):
-        return "Error: Expression contains unsafe characters."
-    
     try:
-        # ast.literal_eval is a safe way to evaluate arithmetic expressions
-        result = ast.literal_eval(expression)
+        parsed_expr = ast.parse(expression, mode='eval')
+
+        result = _eval(parsed_expr.body)
         return str(result)
+
     except Exception as e:
         return f"Calculation Error: {e}"
 
@@ -73,7 +109,8 @@ Final Answer: your ultimate answer to the question.
 agent = create_agent(
     model=llm, 
     tools=TOOLS, 
-    system_prompt=REACT_SYSTEM_INSTRUCTIONS
+    system_prompt=REACT_SYSTEM_INSTRUCTIONS,
+    # debug=True
 )
 
 print("🤖 Simple Self-Contained ReAct Agent is ready!")

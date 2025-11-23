@@ -169,6 +169,7 @@ This script contains the entire agent setup, including the **LLM, two specialize
 ```python
 import os
 import ast 
+import operator as op
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain.agents import create_agent
@@ -187,26 +188,61 @@ if "GOOGLE_API_KEY" not in os.environ:
 # B. LLM (The Brain)
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
-# C. Tool 1: External Search (Current Data)
+# C. Tools (The Hands)
+# Tool 1: External Search
 web_search_tool = DuckDuckGoSearchRun(name="Web_Search_Tool")
 
-# D. Tool 2: Internal Calculator (Custom, safe Python function)
-@tool
+# Tool 2: Internal Calculator (Custom, stable Python function)
+# Allowed math operators
+SAFE_OPERATORS = {
+    ast.Add: op.add,
+    ast.Sub: op.sub,
+    ast.Mult: op.mul,
+    ast.Div: op.truediv,
+    ast.Pow: op.pow,
+    ast.USub: op.neg,
+    ast.UAdd: op.pos,
+    ast.FloorDiv: op.floordiv,
+    ast.Mod: op.mod,
+}
+
+def _eval(node):
+    """Recursively evaluate a safe AST node."""
+    if isinstance(node, ast.Num):  # <number>
+        return node.n
+
+    elif isinstance(node, ast.BinOp):  # <left> <operator> <right>
+        if type(node.op) not in SAFE_OPERATORS:
+            raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
+        return SAFE_OPERATORS[type(node.op)](_eval(node.left), _eval(node.right))
+
+    elif isinstance(node, ast.UnaryOp):  # - <operand>
+        if type(node.op) not in SAFE_OPERATORS:
+            raise ValueError(f"Unsupported unary operator: {type(node.op).__name__}")
+        return SAFE_OPERATORS[type(node.op)](_eval(node.operand))
+
+    else:
+        raise ValueError(f"Unsupported expression type: {type(node).__name__}")
+
+
 def safe_calculator(expression: str) -> str:
     """
-    Use this tool to calculate simple arithmetic expressions. 
-    The input must be a valid Python arithmetic expression string (e.g., '2 * 5 + 10').
-    Do not include variables or complex functions.
+    Safely evaluates arithmetic expressions like:
+    - "15450 - 8125.75"
+    - "120 * 55"
+    - "3.14159 * 17.5 * 17.5"
+
+    Does NOT allow:
+    - variables
+    - function calls
+    - attribute access
     """
-    # Restrict characters to basic arithmetic and numbers for security
-    safe_chars = '0123456789.+-*/() '
-    if not all(c in safe_chars for c in expression):
-        return "Error: Expression contains unsafe characters."
-    
     try:
-        # ast.literal_eval is the safe alternative to eval()
-        result = ast.literal_eval(expression)
+        parsed_expr = ast.parse(expression, mode='eval')
+
+        result = _eval(parsed_expr.body)
         return str(result)
+
     except Exception as e:
         return f"Calculation Error: {e}"
 
@@ -214,10 +250,10 @@ TOOLS = [web_search_tool, safe_calculator]
 
 
 # -------------------------------
-# 2. Agent Prompt (The "Constitution")
+# 2. Agent Prompt (REPLACED HUB PULL)
 # -------------------------------
 
-# This system prompt explicitly defines the agent's behavior and the ReAct format.
+# The instructions for the agent, defining the ReAct format it must use.
 REACT_SYSTEM_INSTRUCTIONS = """
 You are a general-purpose assistant. You have access to the following tools: {tool_names}.
 
@@ -238,11 +274,12 @@ Final Answer: your ultimate answer to the question.
 # 3. Agent Execution Setup
 # -------------------------------
 
-# Create the Agent Runnable: combines the LLM, the tools, and the custom system prompt.
+# A. Create the Agent Runnable
 agent = create_agent(
     model=llm, 
     tools=TOOLS, 
-    system_prompt=REACT_SYSTEM_INSTRUCTIONS
+    system_prompt=REACT_SYSTEM_INSTRUCTIONS,
+    # debug=True
 )
 
 print("🤖 Simple Self-Contained ReAct Agent is ready!")
@@ -261,10 +298,10 @@ while True:
     print("\n--- Agent Thinking (Verbose Trace) ---\n")
     
     try:
-        # Invoke the agent with the user's input
+        # Invoke the executor with the user's input
         response = agent.invoke({"messages": [("human", user_input)]})
 
-        # Extract the final answer content from the response object
+        # The AgentExecutor's final answer is always stored in the 'output' key
         final_answer = response["messages"][-1].content[0]["text"]
 
     except Exception as e:
@@ -294,7 +331,8 @@ while True:
 
 ## TODO: Use `agent_cli` script and integrate it in the FastAPI structure
 
-### 1. Create a `ask_agent` endpoint
+### 1. Create an `agent` endpoint
 This endpoint should be able to receive data and pass it along
 ### 2. Create a Controller for the agent with relevant funcitonality 
 Follow the intuition you have building doing the session 1 hands-on and organize your code accordingly.  
+### 3. See if you notice any problem with the responses from AI.
