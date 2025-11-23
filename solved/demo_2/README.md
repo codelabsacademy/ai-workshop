@@ -271,3 +271,30 @@ while True:
         final_answer = f"Agent execution failed: {e}"
 
     print(f"\nFinal Answer: {final_answer}\n")
+```
+
+## Try your agents based on the following prompt:
+| Tool        | Sample Prompt                                                                                                                                      | Expected Agent Action                                                                                         |
+|-------------|----------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|
+| Web Search  | """What is the largest company in the world by market capitalization, and what were the major headlines about them yesterday?"""                  | Uses Web_Search_Tool to find the company and recent news.                                                     |
+| Web Search  | """Explain the concept of quantum entanglement in simple terms, but first, tell me the current time in Tokyo."""                                   | Uses Web_Search_Tool to find the current time, then answers both questions.                                  |
+| Calculator  | """If a project budget is $15,450 and we have spent $8,125.75, how much money remains? Also, what is 120 times 55?"""                              | Uses safe_calculator once or twice for the subtraction and multiplication.                                   |
+| Calculator  | """Calculate the area of a circle with a radius of 17.5 units. Use 3.14159 for Pi."""                                                              | Uses safe_calculator for the formula πr2 (i.e., 3.14159 * 17.5 * 17.5).                                      |
+
+
+### 👀 Observation: The agent must execute the following steps:
+
+1. **Thought:** Decides to use Web_Search_Tool first to find the stock price.
+
+2. **Thought:** Decides to use the safe_calculator to solve 150 * 5.
+
+3. **Thought:** Uses the safe_calculator again to subtract the two results.
+
+4. **Final Answer:** Presents the ultimate difference.
+
+## TODO: Use `agent_cli` script and integrate it in the FastAPI structure
+
+### 1. Create a `ask_agent` endpoint
+This endpoint should be able to receive data and pass it along
+### 2. Create a Controller for the agent with relevant funcitonality 
+Follow the intuition you have building doing the session 1 hands-on and organize your code accordingly.  
