@@ -6,6 +6,8 @@ from langchain_community.tools import DuckDuckGoSearchRun
 from langchain.agents import create_agent
 from langchain.tools import tool
 
+from app.langfuse import lf_handler, langfuse
+
 SAFE_OPERATORS = {
     ast.Add: op.add,
     ast.Sub: op.sub,
@@ -64,26 +66,22 @@ class AgentController:
         self.__model = model
         self.__temperature = temperature
 
-        self.__gemini = ChatGoogleGenerativeAI(model=self.__model, temperature=self.__temperature)
+        # -----------------------------
+        # Gemini LLM with Langfuse hooks
+        # -----------------------------
+        self.__gemini = ChatGoogleGenerativeAI(
+            model=self.__model,
+            temperature=self.__temperature,
+            callbacks=[lf_handler]
+        )
 
         self.__web_search_tool = DuckDuckGoSearchRun(name="Web_Search_Tool")
         self.__calculator_tool = safe_calculator
-
-        self.__REACT_SYSTEM_INSTRUCTIONS = """
-            You are a general-purpose assistant. You have access to the following tools: {tool_names}.
-
-            You must use the ReAct pattern for reasoning and tool use.
-
-            Use the following format:
-            Thought: your reasoning for the next step.
-            Action: the name of the tool to use (e.g., Web_Search_Tool or safe_calculator).
-            Action Input: the input to the tool.
-            Observation: the result of the tool action.
-            ... (this Thought/Action/Observation cycle repeats)
-
-            When you have the final answer, use the Final Answer format.
-            Final Answer: your ultimate answer to the question.
-            """
+        
+        # prompt management
+        self.__REACT_SYSTEM_INSTRUCTIONS = langfuse.get_prompt("demo", type="text").prompt
+        print("Loaded prompt from Langfuse:")
+        print(self.__REACT_SYSTEM_INSTRUCTIONS)
 
     async def ask_agent(self, prompt):
 
@@ -95,7 +93,7 @@ class AgentController:
             system_prompt=self.__REACT_SYSTEM_INSTRUCTIONS
         )
 
-        response = agent.ainvoke({"messages": [("human", prompt)]})
+        response = await agent.ainvoke({"messages": [("human", prompt)]})
 
         return response["messages"][-1].content[0]["text"]
 
