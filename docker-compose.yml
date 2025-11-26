@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+
+  ai-backend:
+    # --- CHANGE START ---
+    # 1. Instructs Docker Compose to build the image from the Dockerfile 
+    #    located in the current directory (.).
+    build: solved/demo_4
+    container_name: app_container
+    
+    # Optional: You can still tag the image if you want to reference it later
+    # image: demo_4:v1 
+    
+    # 2. Map host port 8000 to container port 8000
+    ports:
+      - "8000:8000"
+      
+    # 3. Environment variables (Critical for API Key)
+    # This securely pulls the GOOGLE_API_KEY from your shell environment
+    environment:
+      - GOOGLE_API_KEY=GOOGLE_API_KEY
+    
+    # 4. Set the restart policy
+    restart: always
