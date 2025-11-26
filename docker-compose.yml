@@ -19,7 +19,9 @@ services:
     # 3. Environment variables (Critical for API Key)
     # This securely pulls the GOOGLE_API_KEY from your shell environment
     environment:
-      - GOOGLE_API_KEY=GOOGLE_API_KEY
-    
+      - LANGFUSE_SECRET_KEY: $LANGFUSE_SECRET_KEY
+      - LANGFUSE_PUBLIC_KEY: $LANGFUSE_PUBLIC_KEY
+      - LANGFUSE_BASE_URL: $LANGFUSE_BASE_URL
+      - GOOGLE_API_KEY: $GOOGLE_API_KEY
     # 4. Set the restart policy
     restart: always
